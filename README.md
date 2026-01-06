@@ -35,6 +35,11 @@ cd /path/to/your/repo
 ./scripts/codex/diagnose.sh
 ```
 
+## Verification
+
+- In the kit repo, run `./scripts/verify.sh` (template-level checks).
+- In a target repo, run `./scripts/agent/verify.sh` (repo-level conformance).
+
 ## Kit Structure
 
 ```
