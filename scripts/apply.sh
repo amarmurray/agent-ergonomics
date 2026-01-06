@@ -139,7 +139,7 @@ for script in bootstrap.sh verify.sh; do
 done
 
 # Copy codex scripts
-for script in run.sh run_cli.sh run_mcp.sh status.sh cancel.sh watchdog.sh enqueue.sh worker.sh worker_status.sh diagnose.sh; do
+for script in run.sh run_cli.sh run_mcp.sh run_cloud.sh status.sh cancel.sh watchdog.sh enqueue.sh worker.sh worker_status.sh diagnose.sh; do
     if [ -f "$KIT_ROOT/scripts/codex/$script" ]; then
         safe_copy "$KIT_ROOT/scripts/codex/$script" "$TARGET_DIR/scripts/codex/$script"
         chmod +x "$TARGET_DIR/scripts/codex/$script" 2>/dev/null || true
