@@ -148,13 +148,25 @@ EXTRA_ARGS+=("--timeout" "$TIMEOUT")
 # Execute via chosen mode
 case $MODE in
     mcp)
+        if [ ${#CLOUD_ARGS[@]} -gt 0 ]; then
+            echo -e "${RED}Error: Cloud-only flags used in non-cloud mode${NC}"
+            exit 1
+        fi
         exec "$SCRIPT_DIR/run_mcp.sh" "${EXTRA_ARGS[@]}" "$TASK"
         ;;
     cli)
+        if [ ${#CLOUD_ARGS[@]} -gt 0 ]; then
+            echo -e "${RED}Error: Cloud-only flags used in non-cloud mode${NC}"
+            exit 1
+        fi
         exec "$SCRIPT_DIR/run_cli.sh" "${EXTRA_ARGS[@]}" "$TASK"
         ;;
     cloud)
-        exec "$SCRIPT_DIR/run_cloud.sh" "${CLOUD_ARGS[@]}" "$TASK"
+        if [ ${#CLOUD_ARGS[@]} -gt 0 ]; then
+            exec "$SCRIPT_DIR/run_cloud.sh" "${CLOUD_ARGS[@]}" "$TASK"
+        else
+            exec "$SCRIPT_DIR/run_cloud.sh" "$TASK"
+        fi
         ;;
     *)
         echo -e "${RED}Error: Invalid mode: $MODE${NC}"
