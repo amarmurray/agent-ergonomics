@@ -3,14 +3,22 @@
 # run.sh - Router entrypoint for Codex execution
 #
 # Automatically selects MCP or CLI path based on availability.
+# Cloud mode is explicit via CODEX_MODE=cloud or --cloud.
 #
 # Usage:
 #   ./scripts/codex/run.sh "task description"
 #   CODEX_MODE=cli ./scripts/codex/run.sh "task description"
 #   CODEX_MODE=mcp ./scripts/codex/run.sh "task description"
+#   CODEX_MODE=cloud ./scripts/codex/run.sh --env ENV_ID "task description"
 #
 # Options:
-#   --mode mcp|cli      Force specific mode
+#   --mode mcp|cli|cloud  Force specific mode
+#   --cloud              Shortcut for --mode cloud
+#   --env ENV_ID         Cloud env ID (required in cloud mode)
+#   --attempts N         Cloud attempts (1-4)
+#   --apply              Apply cloud diff after submission
+#   --wait               Wait and poll apply until diff is ready
+#   --max-wait SECONDS   Max wait time for cloud apply
 #   --schema FILE       Output schema file (for structured output)
 #   --timeout SECONDS   Timeout in seconds (default: 600)
 #
@@ -31,6 +39,7 @@ MODE="${CODEX_MODE:-auto}"
 SCHEMA=""
 TIMEOUT=600
 TASK=""
+CLOUD_ARGS=()
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -38,6 +47,18 @@ while [[ $# -gt 0 ]]; do
         --mode)
             MODE="$2"
             shift 2
+            ;;
+        --cloud)
+            MODE="cloud"
+            shift
+            ;;
+        --env|--attempts|--max-wait)
+            CLOUD_ARGS+=("$1" "$2")
+            shift 2
+            ;;
+        --apply|--wait)
+            CLOUD_ARGS+=("$1")
+            shift
             ;;
         --schema)
             SCHEMA="$2"
@@ -50,16 +71,23 @@ while [[ $# -gt 0 ]]; do
         --help|-h)
             echo "Usage: $0 [options] \"task description\""
             echo ""
-            echo "Run a Codex task via MCP or CLI."
+            echo "Run a Codex task via MCP, CLI, or cloud."
             echo ""
             echo "Options:"
-            echo "  --mode mcp|cli    Force specific execution mode"
+            echo "  --mode mcp|cli|cloud  Force specific execution mode"
+            echo "  --cloud           Shortcut for --mode cloud"
+            echo "  --env ENV_ID      Cloud env ID (required for cloud)"
+            echo "  --attempts N      Cloud attempts (1-4)"
+            echo "  --apply           Apply cloud diff after submission"
+            echo "  --wait            Wait and poll apply until diff is ready"
+            echo "  --max-wait SECS   Max wait time for cloud apply"
             echo "  --schema FILE     Output schema file for structured output"
             echo "  --timeout SECS    Timeout in seconds (default: 600)"
             echo "  --help            Show this help message"
             echo ""
             echo "Environment:"
-            echo "  CODEX_MODE        Set default mode (mcp|cli|auto)"
+            echo "  CODEX_MODE        Set default mode (mcp|cli|cloud|auto)"
+            echo "  CODEX_CLOUD_ENV_ID Default cloud env ID"
             echo "  OPENAI_API_KEY    Required for Codex authentication"
             exit 0
             ;;
@@ -125,9 +153,12 @@ case $MODE in
     cli)
         exec "$SCRIPT_DIR/run_cli.sh" "${EXTRA_ARGS[@]}" "$TASK"
         ;;
+    cloud)
+        exec "$SCRIPT_DIR/run_cloud.sh" "${CLOUD_ARGS[@]}" "$TASK"
+        ;;
     *)
         echo -e "${RED}Error: Invalid mode: $MODE${NC}"
-        echo "Valid modes: mcp, cli, auto"
+        echo "Valid modes: mcp, cli, cloud, auto"
         exit 1
         ;;
 esac

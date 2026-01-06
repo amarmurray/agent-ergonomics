@@ -85,8 +85,12 @@ AWS_SECRET_ACCESS_KEY = "..."
 ### For Codex sub-agent
 
 ```bash
-# Codex uses OPENAI_API_KEY
+# Preferred for automation
+export CODEX_API_KEY="your-key"
+
+# For OAuth login (interactive or CI bootstrap)
 export OPENAI_API_KEY="your-key"
+codex login --api-key "$OPENAI_API_KEY"
 ```
 
 ### For Claude
@@ -109,3 +113,10 @@ MCP servers may require their own credentials. See `.agent/mcp.md` for details.
 # Test API connection
 npm run test:api  # or equivalent
 ```
+
+## Codex Credential Storage
+
+Codex stores OAuth tokens using `cli_auth_credentials_store = "keyring" | "file" | "auto"`.
+
+- `keyring` or `auto` is recommended on macOS (uses the system keychain).
+- `file` stores tokens in `~/.codex/auth.json` (treat this like a password; do not commit or share).

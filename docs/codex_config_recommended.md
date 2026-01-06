@@ -20,6 +20,11 @@ Codex configuration lives at `~/.codex/config.toml` (or `~/.codex/config.json`).
 # - Buffering issues
 # =============================================================================
 
+# Credential storage
+# Options: "keyring", "file", "auto"
+# "auto" or "keyring" recommended on macOS
+cli_auth_credentials_store = "auto"
+
 # Model settings
 [model]
 # Use the latest model for best results
@@ -109,6 +114,14 @@ stream = true
 ```
 
 ## Key Settings Explained
+
+### cli_auth_credentials_store
+
+**Problem**: OAuth tokens need secure storage.
+
+**Solution**: Use `cli_auth_credentials_store = "auto"` or `"keyring"` on macOS.
+
+If you use `"file"`, tokens are stored in `~/.codex/auth.json`. Treat this file like a password: do not commit or share it.
 
 ### max_output_chars
 

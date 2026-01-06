@@ -24,13 +24,23 @@ codex --version
 
 ## Authentication
 
-### Set API Key
+### Set API Key (Automation / CI)
 
 ```bash
-export OPENAI_API_KEY="your-openai-api-key"
+export CODEX_API_KEY="your-codex-api-key"
 ```
 
 Add to your shell profile (`~/.zshrc`, `~/.bashrc`) for persistence.
+
+`CODEX_API_KEY` is supported in `codex exec` and is the preferred env var for explicit credentials in non-interactive flows.
+
+### OAuth Login (Interactive)
+
+```bash
+codex login
+```
+
+Codex stores OAuth tokens in your configured credential store (see below).
 
 ### Verify Authentication
 
@@ -43,6 +53,20 @@ codex whoami
 1. Go to https://platform.openai.com/api-keys
 2. Create a new key
 3. Ensure your account has Codex access
+
+### Credential Storage (OAuth Tokens)
+
+Codex credential storage is configurable via:
+
+```toml
+cli_auth_credentials_store = "keyring" | "file" | "auto"
+```
+
+- `keyring`: store tokens in the system keychain (recommended on macOS)
+- `auto`: choose the best available store
+- `file`: store tokens in `~/.codex/auth.json`
+
+If you use `file`, treat `~/.codex/auth.json` like a password: do not commit or share it.
 
 ## Basic Usage
 
@@ -129,6 +153,9 @@ The agent-ergonomics kit provides wrapper scripts for common operations.
 
 # Force CLI mode
 CODEX_MODE=cli ./scripts/codex/run.sh "your task"
+
+# Force cloud mode (requires env ID)
+CODEX_MODE=cloud ./scripts/codex/run.sh --env ENV_ID "your task"
 ```
 
 ### Queue Tasks
@@ -187,9 +214,11 @@ The kit provides a helper:
 
 | Variable | Purpose |
 |----------|---------|
-| `OPENAI_API_KEY` | API authentication |
+| `CODEX_API_KEY` | API authentication (preferred for automation) |
+| `OPENAI_API_KEY` | OAuth login (used with `codex login --api-key`) |
 | `CODEX_MODEL` | Model to use |
 | `CODEX_MODE` | Default mode (mcp/cli/auto) |
+| `CODEX_CLOUD_ENV_ID` | Default Codex Cloud environment ID |
 
 ## Troubleshooting
 

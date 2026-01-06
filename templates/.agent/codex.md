@@ -22,6 +22,13 @@ Codex can be invoked via two paths:
 ./scripts/codex/run_cli.sh "task description"
 ```
 
+### Path 3: Cloud (Codex Cloud)
+
+```bash
+# Submit to Codex Cloud
+./scripts/codex/run_cloud.sh --env ENV_ID "task description"
+```
+
 ### Router (Automatic Selection)
 
 ```bash
@@ -31,7 +38,14 @@ Codex can be invoked via two paths:
 # Force a specific mode
 CODEX_MODE=cli ./scripts/codex/run.sh "task description"
 CODEX_MODE=mcp ./scripts/codex/run.sh "task description"
+CODEX_MODE=cloud ./scripts/codex/run.sh --env ENV_ID "task description"
 ```
+
+## Authentication and Storage
+
+- Prefer `CODEX_API_KEY` for automation and CI (`codex exec` supports it directly).
+- Use `codex login` for OAuth flows; storage is controlled by `cli_auth_credentials_store = "keyring" | "file" | "auto"`.
+- `keyring`/`auto` is recommended on macOS. If you use `file`, `~/.codex/auth.json` contains access tokens (treat like a password).
 
 ## Task Contract
 
@@ -192,7 +206,9 @@ This will:
 |---------|--------------|-----|
 | No output for hours | Missing --json flag | Use --json for event streaming |
 | Silent failure | Output limit hit | Increase limits in config |
-| Auth errors | Missing OPENAI_API_KEY | Set environment variable |
+| Auth errors | Missing OAuth login or CODEX_API_KEY | Run codex login or set CODEX_API_KEY |
 | Timeout | Task too large | Split into smaller tasks |
+
+**Reasoning effort note**: `model_reasoning_effort = "xhigh"` is allowed but model-dependent. If diagnostics fail, retry with `high`.
 
 See `docs/codex_postmortem.md` for detailed diagnostics.
