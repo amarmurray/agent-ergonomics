@@ -51,6 +51,118 @@ check_warn() {
     ((WARNINGS++))
 }
 
+check_file() {
+    local path="$1"
+    local label="$2"
+
+    if [ -f "$path" ]; then
+        check_pass "$label exists"
+    else
+        check_fail "$label not found"
+    fi
+}
+
+check_dir() {
+    local path="$1"
+    local label="$2"
+
+    if [ -d "$path" ]; then
+        check_pass "$label exists"
+    else
+        check_fail "$label not found"
+    fi
+}
+
+check_script() {
+    local path="$1"
+    local label="$2"
+
+    if [ -f "$path" ]; then
+        if [ -x "$path" ]; then
+            check_pass "$label exists and is executable"
+        else
+            check_warn "$label exists but is not executable"
+        fi
+    else
+        check_fail "$label not found"
+    fi
+}
+
+print_summary() {
+    echo ""
+    echo "=== Summary ==="
+    echo ""
+
+    if [ $ERRORS -eq 0 ] && [ $WARNINGS -eq 0 ]; then
+        echo -e "${GREEN}All checks passed!${NC}"
+        exit 0
+    elif [ $ERRORS -eq 0 ]; then
+        echo -e "${YELLOW}Passed with $WARNINGS warning(s)${NC}"
+        exit 0
+    else
+        echo -e "${RED}Failed with $ERRORS error(s) and $WARNINGS warning(s)${NC}"
+        echo ""
+        if [ "${MODE:-target}" = "kit" ]; then
+            echo "To fix:"
+            echo "  - Ensure kit templates, scripts, and CI workflow are present"
+        else
+            echo "To fix:"
+            echo "  1. Run: ./scripts/apply.sh $TARGET_DIR --force"
+            echo "  2. Or manually create missing files"
+        fi
+        exit 1
+    fi
+}
+
+is_kit_repo() {
+    if [ -d "$TARGET_DIR/templates/.agent" ] && [ -f "$TARGET_DIR/templates/CLAUDE.md" ] && [ ! -f "$TARGET_DIR/CLAUDE.md" ]; then
+        return 0
+    fi
+    return 1
+}
+
+verify_kit() {
+    echo "=== Kit Templates ==="
+    echo ""
+
+    check_file "$TARGET_DIR/templates/CLAUDE.md" "templates/CLAUDE.md"
+    check_file "$TARGET_DIR/templates/AGENTS.md" "templates/AGENTS.md"
+    check_dir "$TARGET_DIR/templates/.agent" "templates/.agent"
+
+    KIT_AGENT_FILES=(
+        "templates/.agent/skills.md"
+        "templates/.agent/sandbox.md"
+        "templates/.agent/auth.md"
+        "templates/.agent/mcp.md"
+        "templates/.agent/codex.md"
+        "templates/.agent/inference_speed.md"
+    )
+
+    for file in "${KIT_AGENT_FILES[@]}"; do
+        check_file "$TARGET_DIR/$file" "$file"
+    done
+
+    echo ""
+    echo "=== Kit Scripts ==="
+    echo ""
+
+    KIT_SCRIPTS=(
+        "scripts/codex/run.sh"
+        "scripts/codex/run_cloud.sh"
+        "scripts/codex/diagnose.sh"
+    )
+
+    for script in "${KIT_SCRIPTS[@]}"; do
+        check_script "$TARGET_DIR/$script" "$script"
+    done
+
+    echo ""
+    echo "=== Kit CI ==="
+    echo ""
+
+    check_file "$TARGET_DIR/.github/workflows/kit-ci.yml" ".github/workflows/kit-ci.yml"
+}
+
 # Expected CLAUDE.md shim content (exact match required)
 EXPECTED_SHIM='# Claude Code entrypoint
 @AGENTS.md
@@ -60,6 +172,13 @@ EXPECTED_SHIM='# Claude Code entrypoint
 @.agent/mcp.md
 @.agent/codex.md
 @.agent/inference_speed.md'
+
+MODE="target"
+if is_kit_repo; then
+    MODE="kit"
+    verify_kit
+    print_summary
+fi
 
 echo "=== Core Files ==="
 echo ""
@@ -158,20 +277,4 @@ else
 fi
 
 echo ""
-echo "=== Summary ==="
-echo ""
-
-if [ $ERRORS -eq 0 ] && [ $WARNINGS -eq 0 ]; then
-    echo -e "${GREEN}All checks passed!${NC}"
-    exit 0
-elif [ $ERRORS -eq 0 ]; then
-    echo -e "${YELLOW}Passed with $WARNINGS warning(s)${NC}"
-    exit 0
-else
-    echo -e "${RED}Failed with $ERRORS error(s) and $WARNINGS warning(s)${NC}"
-    echo ""
-    echo "To fix:"
-    echo "  1. Run: ./scripts/apply.sh $TARGET_DIR --force"
-    echo "  2. Or manually create missing files"
-    exit 1
-fi
+print_summary

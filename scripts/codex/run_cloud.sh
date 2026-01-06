@@ -3,7 +3,7 @@
 # run_cloud.sh - Submit a Codex Cloud task and optionally apply the diff
 #
 # Usage:
-#   ./scripts/codex/run_cloud.sh --env ENV_ID [--attempts N] [--apply] [--wait] [--max-wait SECS] "TASK PROMPT"
+#   ./scripts/codex/run_cloud.sh --env ENV_ID [--attempts N] [--apply] [--wait] [--max-wait SECS] [--timeout SECS] [--poll SECS] "TASK PROMPT"
 #
 # Environment:
 #   CODEX_CLOUD_ENV_ID            Default environment ID (if --env omitted)
@@ -29,6 +29,7 @@ ENV_ID="${CODEX_CLOUD_ENV_ID:-}"
 ATTEMPTS=1
 APPLY=false
 WAIT=false
+WAIT_ONLY=false
 MAX_WAIT_SECS="${CODEX_CLOUD_MAX_WAIT_SECS:-1800}"
 SLEEP_MIN_SECS="${CODEX_CLOUD_SLEEP_MIN_SECS:-20}"
 SLEEP_MAX_SECS="${CODEX_CLOUD_SLEEP_MAX_SECS:-60}"
@@ -36,7 +37,7 @@ APPLY_TIMEOUT_SECS="${CODEX_CLOUD_APPLY_TIMEOUT_SECS:-300}"
 PROMPT=""
 
 usage() {
-    echo "Usage: $0 --env ENV_ID [--attempts N] [--apply] [--wait] [--max-wait SECS] \"TASK PROMPT\""
+    echo "Usage: $0 --env ENV_ID [--attempts N] [--apply] [--wait] [--max-wait SECS] [--timeout SECS] [--poll SECS] \"TASK PROMPT\""
     echo ""
     echo "Submit a Codex Cloud task and optionally apply the latest diff."
     echo ""
@@ -44,8 +45,10 @@ usage() {
     echo "  --env ENV_ID       Codex Cloud environment ID (required unless CODEX_CLOUD_ENV_ID set)"
     echo "  --attempts N       Number of attempts (1-4, default: 1)"
     echo "  --apply            Apply latest diff once the task is submitted"
-    echo "  --wait             Poll apply until diff is ready (implies --apply)"
+    echo "  --wait             Poll until diff is ready (no apply without --apply)"
     echo "  --max-wait SECS    Max seconds to wait for diff (default: 1800)"
+    echo "  --timeout SECS     Alias for --max-wait"
+    echo "  --poll SECS        Initial polling interval for --wait"
     echo "  --help             Show this help message"
     echo ""
     echo "Environment:"
@@ -54,6 +57,9 @@ usage() {
     echo "  CODEX_CLOUD_SLEEP_MIN_SECS Min polling interval"
     echo "  CODEX_CLOUD_SLEEP_MAX_SECS Max polling interval"
     echo "  CODEX_CLOUD_APPLY_TIMEOUT_SECS Per-apply timeout"
+    echo ""
+    echo "Notes:"
+    echo "  codex apply exits non-zero on git apply failures; conflicts stop retries."
 }
 
 slugify() {
@@ -81,10 +87,23 @@ run_with_timeout() {
 extract_task_id() {
     local text="$1"
     local id=""
+    local url=""
 
     id=$(printf '%s\n' "$text" | sed -nE 's/.*"task_id"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -n1)
     if [ -z "$id" ]; then
         id=$(printf '%s\n' "$text" | sed -nE 's/.*[Tt]ask[[:space:]_-]*ID[[:space:]]*[:=][[:space:]]*([A-Za-z0-9_-]+).*/\1/p' | head -n1)
+    fi
+    if [ -z "$id" ]; then
+        url=$(extract_task_url "$text")
+        if [ -n "$url" ]; then
+            id=$(printf '%s' "$url" | sed -nE 's#.*/task[/_-]?([A-Za-z0-9_-]+).*#\1#p')
+            if [ -z "$id" ]; then
+                id=$(printf '%s' "$url" | sed -nE 's#.*(task[_-][A-Za-z0-9_-]+).*#\1#p')
+            fi
+            if [ -z "$id" ]; then
+                id=$(printf '%s' "$url" | sed -nE 's#.*/([0-9a-fA-F-]{36}).*#\1#p')
+            fi
+        fi
     fi
     if [ -z "$id" ]; then
         id=$(printf '%s\n' "$text" | grep -Eo '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' | head -n1 || true)
@@ -95,15 +114,41 @@ extract_task_id() {
     printf '%s' "$id"
 }
 
-ensure_clean_git() {
+extract_task_url() {
+    local text="$1"
+    local url=""
+
+    url=$(printf '%s\n' "$text" | grep -Eo 'https?://[^ ]*task[^ ]*' | head -n1 || true)
+    printf '%s' "$url"
+}
+
+ensure_git_repo() {
     if ! git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         echo -e "${RED}Error: Not inside a git repository${NC}"
         exit 1
     fi
+}
+
+ensure_clean_git() {
+    ensure_git_repo
     if [ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]; then
         echo -e "${RED}Error: Working tree not clean${NC}"
         echo "Commit or stash changes before applying a cloud diff."
         exit 1
+    fi
+}
+
+setup_wait_worktree() {
+    WAIT_WORKTREE="$(mktemp -d 2>/dev/null || mktemp -d -t codex-wait)"
+    if ! git -C "$REPO_ROOT" worktree add --detach "$WAIT_WORKTREE" >/dev/null 2>&1; then
+        echo -e "${RED}Error: Failed to create temporary worktree for --wait${NC}"
+        exit 1
+    fi
+}
+
+cleanup_wait_worktree() {
+    if [ -n "${WAIT_WORKTREE:-}" ] && [ -d "$WAIT_WORKTREE" ]; then
+        git -C "$REPO_ROOT" worktree remove --force "$WAIT_WORKTREE" >/dev/null 2>&1 || true
     fi
 }
 
@@ -127,6 +172,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --max-wait)
             MAX_WAIT_SECS="$2"
+            shift 2
+            ;;
+        --timeout)
+            MAX_WAIT_SECS="$2"
+            shift 2
+            ;;
+        --poll)
+            SLEEP_MIN_SECS="$2"
             shift 2
             ;;
         --help|-h)
@@ -166,8 +219,12 @@ case "$ATTEMPTS" in
 esac
 
 if [ "$WAIT" = true ] && [ "$APPLY" = false ]; then
-    APPLY=true
-    echo -e "${YELLOW}Note: --wait implies --apply${NC}"
+    WAIT_ONLY=true
+    echo -e "${YELLOW}Note:${NC} --wait without --apply will not apply changes"
+fi
+
+if [ "$SLEEP_MIN_SECS" -gt "$SLEEP_MAX_SECS" ]; then
+    SLEEP_MIN_SECS="$SLEEP_MAX_SECS"
 fi
 
 if ! command -v codex >/dev/null 2>&1; then
@@ -221,7 +278,9 @@ if [ $SUBMIT_EXIT -ne 0 ]; then
     exit 1
 fi
 
-TASK_ID="$(extract_task_id "$(cat "$SUBMIT_LOG")")"
+SUBMIT_OUTPUT="$(cat "$SUBMIT_LOG")"
+TASK_URL="$(extract_task_url "$SUBMIT_OUTPUT")"
+TASK_ID="$(extract_task_id "$SUBMIT_OUTPUT")"
 if [ -z "$TASK_ID" ]; then
     echo -e "${RED}Error: Could not parse TASK_ID from output${NC}"
     echo ""
@@ -248,27 +307,46 @@ cat > "$RUN_DIR/meta.json" << EOF
   "prompt": "$PROMPT",
   "created_at": "$CREATED_AT",
   "submitted_at": "$SUBMITTED_AT",
-  "task_id": "$TASK_ID"
+  "task_id": "$TASK_ID",
+  "task_url": "$TASK_URL"
 }
 EOF
 
 echo -e "${GREEN}Task submitted: ${TASK_ID}${NC}"
+if [ -n "$TASK_URL" ]; then
+    echo "Task URL: $TASK_URL"
+fi
 echo ""
 
-if [ "$APPLY" = true ]; then
-    ensure_clean_git
-
-    echo -e "${CYAN}=== Applying Cloud Diff ===${NC}"
-    echo "Task ID: $TASK_ID"
-    echo "Apply timeout: ${APPLY_TIMEOUT_SECS}s"
-    echo ""
+if [ "$APPLY" = true ] || [ "$WAIT_ONLY" = true ]; then
+    if [ "$WAIT_ONLY" = true ]; then
+        ensure_git_repo
+        setup_wait_worktree
+        trap cleanup_wait_worktree EXIT
+        echo -e "${CYAN}=== Waiting for Cloud Diff (no apply) ===${NC}"
+        echo "Task ID: $TASK_ID"
+        echo "Apply timeout: ${APPLY_TIMEOUT_SECS}s"
+        echo "No changes will be applied."
+        echo ""
+    else
+        ensure_clean_git
+        echo -e "${CYAN}=== Applying Cloud Diff ===${NC}"
+        echo "Task ID: $TASK_ID"
+        echo "Apply timeout: ${APPLY_TIMEOUT_SECS}s"
+        echo ""
+    fi
 
     attempt=1
     WAIT_START=$(date +%s)
+    SLEEP_SECS="$SLEEP_MIN_SECS"
 
     while true; do
-        APPLY_LOG="$RUN_DIR/apply_attempt_${attempt}.log"
-        echo -e "${GREEN}Apply attempt ${attempt}...${NC}"
+        if [ "$WAIT_ONLY" = true ]; then
+            APPLY_LOG="$RUN_DIR/wait_attempt_${attempt}.log"
+        else
+            APPLY_LOG="$RUN_DIR/apply_attempt_${attempt}.log"
+        fi
+        echo -e "${GREEN}Attempt ${attempt}...${NC}"
         echo "Log: $APPLY_LOG"
 
         {
@@ -279,11 +357,41 @@ if [ "$APPLY" = true ]; then
         } > "$APPLY_LOG"
 
         set +e
-        (cd "$REPO_ROOT" && run_with_timeout "$APPLY_TIMEOUT_SECS" codex apply "$TASK_ID") >> "$APPLY_LOG" 2>&1
+        if [ "$WAIT_ONLY" = true ]; then
+            (cd "$WAIT_WORKTREE" && run_with_timeout "$APPLY_TIMEOUT_SECS" codex apply "$TASK_ID") >> "$APPLY_LOG" 2>&1
+        else
+            (cd "$REPO_ROOT" && run_with_timeout "$APPLY_TIMEOUT_SECS" codex apply "$TASK_ID") >> "$APPLY_LOG" 2>&1
+        fi
         APPLY_EXIT=$?
         set -e
 
         if [ $APPLY_EXIT -eq 0 ]; then
+            if [ "$WAIT_ONLY" = true ]; then
+                echo -e "${GREEN}Diff is ready (not applied)${NC}"
+                echo "Run: codex apply $TASK_ID"
+                cat > "$RUN_DIR/meta.json" << EOF
+{
+  "job_id": "$JOB_ID",
+  "mode": "cloud",
+  "env_id": "$ENV_ID",
+  "attempts": $ATTEMPTS,
+  "apply": $APPLY,
+  "wait": $WAIT,
+  "max_wait_seconds": $MAX_WAIT_SECS,
+  "prompt": "$PROMPT",
+  "created_at": "$CREATED_AT",
+  "submitted_at": "$SUBMITTED_AT",
+  "task_id": "$TASK_ID",
+  "task_url": "$TASK_URL",
+  "ready_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "apply_status": "ready",
+  "apply_attempts": $attempt,
+  "wait_only": true
+}
+EOF
+                break
+            fi
+
             echo -e "${GREEN}codex apply succeeded${NC}"
             cat > "$RUN_DIR/meta.json" << EOF
 {
@@ -298,6 +406,7 @@ if [ "$APPLY" = true ]; then
   "created_at": "$CREATED_AT",
   "submitted_at": "$SUBMITTED_AT",
   "task_id": "$TASK_ID",
+  "task_url": "$TASK_URL",
   "applied_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "apply_status": "success",
   "apply_attempts": $attempt
@@ -306,34 +415,56 @@ EOF
             break
         fi
 
+        if grep -qiE 'still running|not ready|pending|in progress|no diff turn found' "$APPLY_LOG"; then
+            if [ "$WAIT" = false ]; then
+                echo -e "${RED}Diff not ready yet${NC}"
+                echo "Re-run with --wait to poll until the diff is ready."
+                exit 1
+            fi
+
+            NOW=$(date +%s)
+            ELAPSED=$((NOW - WAIT_START))
+            if [ $ELAPSED -ge "$MAX_WAIT_SECS" ]; then
+                echo -e "${RED}Max wait exceeded (${MAX_WAIT_SECS}s)${NC}"
+                echo "Last apply log: $APPLY_LOG"
+                exit 1
+            fi
+
+            if [ $((ELAPSED + SLEEP_SECS)) -gt "$MAX_WAIT_SECS" ]; then
+                SLEEP_SECS=$((MAX_WAIT_SECS - ELAPSED))
+            fi
+            if [ $SLEEP_SECS -le 0 ]; then
+                echo -e "${RED}Max wait exceeded (${MAX_WAIT_SECS}s)${NC}"
+                echo "Last apply log: $APPLY_LOG"
+                exit 1
+            fi
+
+            echo -e "${YELLOW}Diff not ready yet; retrying in ${SLEEP_SECS}s (elapsed ${ELAPSED}s)${NC}"
+            sleep "$SLEEP_SECS"
+            attempt=$((attempt + 1))
+            if [ "$SLEEP_SECS" -lt "$SLEEP_MAX_SECS" ]; then
+                SLEEP_SECS=$((SLEEP_SECS * 2))
+                if [ "$SLEEP_SECS" -gt "$SLEEP_MAX_SECS" ]; then
+                    SLEEP_SECS="$SLEEP_MAX_SECS"
+                fi
+            fi
+            continue
+        fi
+
         if grep -qiE 'conflict|merge conflict|patch failed|apply failed|cannot apply' "$APPLY_LOG"; then
-            echo -e "${RED}Apply failed due to conflicts${NC}"
-            echo "Resolve conflicts manually, then retry codex apply."
+            if [ "$WAIT_ONLY" = true ]; then
+                echo -e "${RED}Diff is ready but conflicts would occur${NC}"
+                echo "Run: codex apply $TASK_ID"
+            else
+                echo -e "${RED}Apply failed due to conflicts${NC}"
+                echo "Resolve conflicts manually, then retry codex apply."
+            fi
             exit 1
         fi
 
-        if [ "$WAIT" = false ]; then
-            echo -e "${RED}codex apply failed (exit $APPLY_EXIT)${NC}"
-            echo "See log: $APPLY_LOG"
-            exit 1
-        fi
-
-        NOW=$(date +%s)
-        ELAPSED=$((NOW - WAIT_START))
-        if [ $ELAPSED -ge "$MAX_WAIT_SECS" ]; then
-            echo -e "${RED}Max wait exceeded (${MAX_WAIT_SECS}s)${NC}"
-            echo "Last apply log: $APPLY_LOG"
-            exit 1
-        fi
-
-        SLEEP_SPREAD=$((SLEEP_MAX_SECS - SLEEP_MIN_SECS + 1))
-        if [ $SLEEP_SPREAD -lt 1 ]; then
-            SLEEP_SPREAD=1
-        fi
-        SLEEP_FOR=$((SLEEP_MIN_SECS + RANDOM % SLEEP_SPREAD))
-        echo -e "${YELLOW}Diff not ready yet; retrying in ${SLEEP_FOR}s (elapsed ${ELAPSED}s)${NC}"
-        sleep "$SLEEP_FOR"
-        attempt=$((attempt + 1))
+        echo -e "${RED}codex apply failed (exit $APPLY_EXIT)${NC}"
+        echo "See log: $APPLY_LOG"
+        exit 1
     done
 fi
 

@@ -22,6 +22,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 TIMEOUT_SECS=120
 
+mkdir -p "$REPO_ROOT/.agent/runs" "$REPO_ROOT/.agent/queue"
+
 JOB_ID="diagnostic-$(date +%Y%m%d-%H%M%S)"
 RUN_DIR="$REPO_ROOT/.agent/runs/$JOB_ID"
 mkdir -p "$RUN_DIR"

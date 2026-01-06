@@ -1,0 +1,29 @@
+name: Kit CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  bash-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash syntax check
+        run: |
+          shopt -s globstar
+          bash -n scripts/**/*.sh
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: ShellCheck (severity=error)
+        run: |
+          shopt -s globstar
+          shellcheck --severity=error scripts/**/*.sh
+
+      - name: Verify kit
+        run: ./scripts/verify.sh

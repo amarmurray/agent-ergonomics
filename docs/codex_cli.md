@@ -158,6 +158,27 @@ CODEX_MODE=cli ./scripts/codex/run.sh "your task"
 CODEX_MODE=cloud ./scripts/codex/run.sh --env ENV_ID "your task"
 ```
 
+### Cloud Lane (Parallel Execution)
+
+```bash
+# Direct cloud runner
+./scripts/codex/run_cloud.sh --env "$CODEX_CLOUD_ENV_ID" "task description"
+
+# Wait until diff is ready (no apply)
+./scripts/codex/run_cloud.sh --env "$CODEX_CLOUD_ENV_ID" --wait "task description"
+
+# Wait for diff and apply when ready
+./scripts/codex/run_cloud.sh --env "$CODEX_CLOUD_ENV_ID" --apply --wait "task description"
+
+# Router with cloud flags
+./scripts/codex/run.sh --cloud --env "$CODEX_CLOUD_ENV_ID" --attempts 2 --wait --apply "task description"
+```
+
+Notes:
+- `codex cloud exec` does not support `--json`; JSON streaming is only for local `codex exec`.
+- `codex apply` exits non-zero on git apply failures or conflicts.
+- `--wait` polls until the diff is ready; it does not apply changes unless `--apply` is set.
+
 ### Queue Tasks
 
 ```bash
