@@ -19,6 +19,7 @@
 #   --apply              Apply cloud diff after submission
 #   --wait               Wait and poll apply until diff is ready
 #   --max-wait SECONDS   Max wait time for cloud apply
+#   --poll SECONDS       Initial polling interval for cloud apply
 #   --schema FILE       Output schema file (for structured output)
 #   --timeout SECONDS   Timeout in seconds (default: 600)
 #
@@ -38,6 +39,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 MODE="${CODEX_MODE:-auto}"
 SCHEMA=""
 TIMEOUT=600
+TIMEOUT_SET=false
 TASK=""
 CLOUD_ARGS=()
 
@@ -52,7 +54,7 @@ while [[ $# -gt 0 ]]; do
             MODE="cloud"
             shift
             ;;
-        --env|--attempts|--max-wait)
+        --env|--attempts|--max-wait|--poll)
             CLOUD_ARGS+=("$1" "$2")
             shift 2
             ;;
@@ -66,6 +68,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --timeout)
             TIMEOUT="$2"
+            TIMEOUT_SET=true
             shift 2
             ;;
         --help|-h)
@@ -81,6 +84,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --apply           Apply cloud diff after submission"
             echo "  --wait            Wait and poll apply until diff is ready"
             echo "  --max-wait SECS   Max wait time for cloud apply"
+            echo "  --poll SECS       Initial polling interval for cloud apply"
             echo "  --schema FILE     Output schema file for structured output"
             echo "  --timeout SECS    Timeout in seconds (default: 600)"
             echo "  --help            Show this help message"
@@ -104,6 +108,10 @@ if [ -z "$TASK" ]; then
     echo -e "${RED}Error: Task description required${NC}"
     echo "Usage: $0 \"task description\""
     exit 1
+fi
+
+if [ "$MODE" = "auto" ] && [ ${#CLOUD_ARGS[@]} -gt 0 ]; then
+    MODE="cloud"
 fi
 
 # Function to check if MCP is available
@@ -145,6 +153,11 @@ if [ -n "$SCHEMA" ]; then
 fi
 EXTRA_ARGS+=("--timeout" "$TIMEOUT")
 
+CLOUD_EXTRA_ARGS=()
+if [ "$TIMEOUT_SET" = true ]; then
+    CLOUD_EXTRA_ARGS+=("--timeout" "$TIMEOUT")
+fi
+
 # Execute via chosen mode
 case $MODE in
     mcp)
@@ -162,8 +175,8 @@ case $MODE in
         exec "$SCRIPT_DIR/run_cli.sh" "${EXTRA_ARGS[@]}" "$TASK"
         ;;
     cloud)
-        if [ ${#CLOUD_ARGS[@]} -gt 0 ]; then
-            exec "$SCRIPT_DIR/run_cloud.sh" "${CLOUD_ARGS[@]}" "$TASK"
+        if [ ${#CLOUD_ARGS[@]} -gt 0 ] || [ ${#CLOUD_EXTRA_ARGS[@]} -gt 0 ]; then
+            exec "$SCRIPT_DIR/run_cloud.sh" "${CLOUD_ARGS[@]}" "${CLOUD_EXTRA_ARGS[@]}" "$TASK"
         else
             exec "$SCRIPT_DIR/run_cloud.sh" "$TASK"
         fi

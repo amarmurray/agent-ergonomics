@@ -85,10 +85,16 @@ AWS_SECRET_ACCESS_KEY = "..."
 ### For Codex sub-agent
 
 ```bash
+# Auth order guidance:
+# 1) OAuth login (interactive) 2) CODEX_API_KEY 3) OPENAI_API_KEY (legacy)
+
+# OAuth login (preferred when available)
+codex login
+
 # Preferred for automation
 export CODEX_API_KEY="your-key"
 
-# For OAuth login (interactive or CI bootstrap)
+# Legacy API key flow (bootstraps OAuth)
 export OPENAI_API_KEY="your-key"
 codex login --api-key "$OPENAI_API_KEY"
 ```
