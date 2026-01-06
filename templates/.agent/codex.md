@@ -45,11 +45,14 @@ CODEX_MODE=cloud ./scripts/codex/run.sh --env ENV_ID "task description"
 
 ## Cloud Lane Usage
 
-Use the cloud lane for parallelism or long-running tasks. `--apply` is opt-in, and `--wait` requires `--apply`.
+Use the cloud lane for parallelism or long-running tasks. `--apply` is opt-in; `--wait` polls until the diff is ready and exits without applying unless `--apply` is set.
 
 ```bash
 # Wait and apply when the diff is ready
 ./scripts/codex/run_cloud.sh --env "$CODEX_CLOUD_ENV_ID" --apply --wait "task description"
+
+# Wait until the diff is ready (no apply)
+./scripts/codex/run_cloud.sh --env "$CODEX_CLOUD_ENV_ID" --wait "task description"
 
 # Router with cloud flags
 ./scripts/codex/run.sh --cloud --env "$CODEX_CLOUD_ENV_ID" --attempts 2 --wait --apply "task description"

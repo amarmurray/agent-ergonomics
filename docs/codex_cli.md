@@ -164,6 +164,9 @@ CODEX_MODE=cloud ./scripts/codex/run.sh --env ENV_ID "your task"
 # Direct cloud runner
 ./scripts/codex/run_cloud.sh --env "$CODEX_CLOUD_ENV_ID" "task description"
 
+# Wait until diff is ready (no apply)
+./scripts/codex/run_cloud.sh --env "$CODEX_CLOUD_ENV_ID" --wait "task description"
+
 # Wait for diff and apply when ready
 ./scripts/codex/run_cloud.sh --env "$CODEX_CLOUD_ENV_ID" --apply --wait "task description"
 
@@ -174,7 +177,7 @@ CODEX_MODE=cloud ./scripts/codex/run.sh --env ENV_ID "your task"
 Notes:
 - `codex cloud exec` does not support `--json`; JSON streaming is only for local `codex exec`.
 - `codex apply` exits non-zero on git apply failures or conflicts.
-- `--wait` requires `--apply`; apply is always opt-in.
+- `--wait` polls until the diff is ready; it does not apply changes unless `--apply` is set.
 
 ### Queue Tasks
 
